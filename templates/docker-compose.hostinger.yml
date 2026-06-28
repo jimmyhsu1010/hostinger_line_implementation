@@ -1,0 +1,29 @@
+# Hostinger one-click Hermes Agent compose reference.
+# Use this as a guide, not necessarily a full replacement for Hostinger's generated file.
+# Important difference: LINE route uses PathPrefix(`/line`) so /line/media also reaches adapter port 8646.
+
+services:
+  hermes-agent:
+    image: ghcr.io/hostinger/hvps-hermes-agent:latest
+    restart: unless-stopped
+    ports:
+      - "4860"
+      - "8646"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.rule=Host(`${COMPOSE_PROJECT_NAME}.${TRAEFIK_HOST}`)
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.entrypoints=websecure
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.tls.certresolver=letsencrypt
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.service=${COMPOSE_PROJECT_NAME}
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=4860
+
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-line.rule=Host(`${COMPOSE_PROJECT_NAME}.${TRAEFIK_HOST}`) && PathPrefix(`/line`)
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-line.entrypoints=websecure
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-line.tls.certresolver=letsencrypt
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-line.priority=1000
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-line.service=${COMPOSE_PROJECT_NAME}-line
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}-line.loadbalancer.server.port=8646
+    env_file:
+      - .env
+    volumes:
+      - ./data:/opt/data
