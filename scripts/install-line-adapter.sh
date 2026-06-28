@@ -26,9 +26,8 @@ elif [ -n "$REPO_RAW_BASE" ]; then
   curl -fsSL "$REPO_RAW_BASE/line/adapter.py" -o "$TMP_FILE"
 else
   echo "ERROR: No local line/adapter.py found and REPO_RAW_BASE is not set." >&2
-  echo "Example:" >&2
-  echo "  export REPO_RAW_BASE=https://raw.githubusercontent.com/<owner>/hostinger_line_implementation/main" >&2
-  echo "  curl -fsSL \"$REPO_RAW_BASE/scripts/install-line-adapter.sh\" | bash" >&2
+  echo "For private repos, clone the repo first, then run: bash scripts/one-click-install.sh" >&2
+  echo "Public/raw mode is only for public repos or authenticated curl setups." >&2
   exit 1
 fi
 

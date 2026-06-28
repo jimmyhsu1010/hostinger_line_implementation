@@ -2,12 +2,7 @@
 
 這個 repo 是給「Hostinger 一鍵部署 Hermes Agent」後使用的快速套用包。
 
-目的：
-
-1. 保留已在實機驗證過的 LINE adapter。
-2. 快速修正 Hostinger Traefik LINE route。
-3. 快速套用適合 LINE OA 的 Hermes 基本設定。
-4. 驗證 LINE webhook health 與本機 adapter 狀態。
+目標：客戶透過 Hostinger 一鍵部署 Hermes Agent 後，部署者只要 clone 這個 private repo，執行一個 script，就能套用已驗證的 LINE adapter、基本 config、檢查 Hostinger Traefik LINE route，並完成 health 驗證。
 
 不包含：
 
@@ -15,40 +10,96 @@
 - 客戶業務資料。
 - 客戶 LINE access token / secret。
 - ADMIN_PASSWORD 或任何 API key。
+- 任何個人化 persona、memory 或歷史 session。
 
 ## 標準使用情境
 
-客戶已透過 Hostinger 一鍵部署 Hermes Agent，且 compose 類似：
+客戶已透過 Hostinger 一鍵部署 Hermes Agent，且 Hostinger 產生的設定通常類似：
 
 - WebUI / Dashboard port: 4860
 - LINE adapter port: 8646
 - volume: `./data:/opt/data`
 - image: `ghcr.io/hostinger/hvps-hermes-agent:latest`
+- Traefik LINE router: `PathPrefix('/line')`
 
-接著進入該 Hermes container 或在可修改 `/opt/hermes` 的環境中執行 bootstrap script。
+目前標準化後，Traefik LINE route 應該使用：
 
-## 最快安裝方式
-
-正式推到 GitHub 後，可用：
-
-```bash
-export REPO_RAW_BASE="https://raw.githubusercontent.com/<你的GitHub帳號>/hostinger_line_implementation/main"
-curl -fsSL "$REPO_RAW_BASE/scripts/bootstrap.sh" | bash
+```yaml
+PathPrefix(`/line`)
 ```
 
-如果 repo 已經 clone 到機器上：
+不是：
+
+```yaml
+PathPrefix(`/line/webhook`)
+```
+
+原因：`/line/webhook` 只涵蓋 webhook 與 health；LINE 圖片、影片、音訊或檔案預覽可能會使用 `/line/media/...`，所以 route 要涵蓋整個 `/line`。
+
+## Private repo clone
+
+這個 repo 是 private，不能直接用一般 public raw URL 下載。
+
+最快方式是使用短效 fine-grained PAT，只給這個 repo 的 Contents Read-only 權限：
+
+```bash
+cd /opt/data
+read -rsp "GitHub token: " GH_PAT; echo
+export GH_PAT
+tmp_askpass="$(mktemp)"
+cat > "$tmp_askpass" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  Username*) echo x-access-token ;;
+  Password*) echo "$GH_PAT" ;;
+esac
+EOF
+chmod 700 "$tmp_askpass"
+GIT_ASKPASS="$tmp_askpass" GIT_TERMINAL_PROMPT=0 git clone https://github.com/jimmyhsu1010/hostinger_line_implementation.git
+rm -f "$tmp_askpass"
+unset GH_PAT
+cd hostinger_line_implementation
+git remote set-url origin https://github.com/jimmyhsu1010/hostinger_line_implementation.git
+bash scripts/one-click-install.sh
+```
+
+更多方式見：
+
+```text
+docs/private-repo-access.md
+```
+
+## 一鍵執行
+
+clone 下來後，在 repo 內執行：
 
 ```bash
 cd /opt/data/hostinger_line_implementation
+bash scripts/one-click-install.sh
+```
+
+這支 script 會做：
+
+1. 備份並覆蓋 `/opt/hermes/plugins/platforms/line/adapter.py`。
+2. 套用安全的 Hermes config 預設值。
+3. 若找得到 Hostinger compose，檢查/修正 LINE route 為 `PathPrefix('/line')`。
+4. 驗證 LINE env、adapter 語法、本機 health、公開 health。
+5. 印出下一步 LINE Developers webhook URL。
+
+舊名稱仍可用：
+
+```bash
 bash scripts/bootstrap.sh
 ```
 
+`bootstrap.sh` 目前只是轉呼叫 `one-click-install.sh`。
+
 ## 客戶 .env 必填
 
-不要把真實 token commit 到 GitHub。請複製模板：
+不要把真實 token commit 到 GitHub。可參考：
 
-```bash
-cp templates/env.template /opt/data/.env
+```text
+templates/env.template
 ```
 
 至少填入：
@@ -62,28 +113,20 @@ LINE_PORT=8646
 LINE_ALLOW_ALL_USERS=true
 ```
 
+注意：`LINE_PUBLIC_URL` 是 base URL，不要加 `/line/webhook`。
+
 `LINE_ALLOW_ALL_USERS=true` 適合客戶自己的公開 OA 初始測試。若是私人/內部 bot，再改成 allowlist。
 
-## Hostinger compose 重要修正
+## config.yaml
 
-LINE route 建議使用：
+這個 repo 不直接覆蓋客戶的 `/opt/data/config.yaml`，避免刪掉 Hostinger 一鍵部署已產生的設定。
 
-```yaml
-PathPrefix(`/line`)
-```
+一鍵 script 會用 `hermes config set ...` 只改必要項目。
 
-不要只用：
+人類可讀參考：
 
-```yaml
-PathPrefix(`/line/webhook`)
-```
-
-原因是 `/line/webhook` 只涵蓋 webhook 與 health，但圖片/音訊/影片可能需要 `/line/media/...`，如果沒有轉到 8646，LINE 會顯示圖片或媒體失敗。
-
-可執行：
-
-```bash
-bash scripts/fix-traefik-line-route.sh /path/to/docker-compose.yml
+```text
+templates/config.yaml
 ```
 
 ## 驗證
@@ -115,14 +158,18 @@ https://<LINE_PUBLIC_URL_HOST>/line/webhook/health
 
 ```text
 line/adapter.py                         已驗證 LINE adapter
+scripts/one-click-install.sh             一鍵套用 adapter/config/route/verify
+scripts/bootstrap.sh                     相容舊名稱，轉呼叫 one-click-install.sh
 scripts/install-line-adapter.sh          覆蓋 /opt/hermes 的 adapter，並備份原檔
 scripts/configure-hostinger-line.sh      套用 Hermes config 基本設定
-scripts/fix-traefik-line-route.sh        把 PathPrefix(`/line/webhook`) 改成 PathPrefix(`/line`)
+scripts/fix-traefik-line-route.sh        將舊 PathPrefix('/line/webhook') 修成 PathPrefix('/line')
 scripts/verify-line.sh                   驗證 env、adapter、health
-scripts/bootstrap.sh                     串起 install + configure + verify
 templates/env.template                   客戶 .env 範本，不含秘密
-templates/docker-compose.hostinger.yml   Hostinger compose 範例
+templates/config.yaml                    config.yaml 參考值，不直接覆蓋正式設定
+templates/docker-compose.hostinger.yml   Hostinger compose 範例，LINE route 已使用 PathPrefix('/line')
 templates/handover.md                    交付給客戶的簡短說明
+docs/hostinger-line-sop.md               部署 SOP
+docs/private-repo-access.md              private repo clone/access 說明
 ```
 
 ## 安全提醒
@@ -130,4 +177,11 @@ templates/handover.md                    交付給客戶的簡短說明
 - 不要 commit `.env`。
 - 不要 commit 客戶 token、secret、password、API key。
 - 若曾把 secret 貼到聊天或 repo，請立刻旋轉。
+- private repo clone 用的 PAT 建議短效、只給 Contents Read-only。
+- clone 完若 remote URL 帶 token，請改回乾淨 URL：
+
+```bash
+git remote set-url origin https://github.com/jimmyhsu1010/hostinger_line_implementation.git
+```
+
 - 修改 `/opt/hermes/plugins/platforms/line/adapter.py` 前 script 會自動備份。

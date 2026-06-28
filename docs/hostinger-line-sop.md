@@ -10,6 +10,7 @@ Hostinger 生成的 compose 通常會有：
 - LINE adapter: 8646
 - volume: `./data:/opt/data`
 - Traefik host: `${COMPOSE_PROJECT_NAME}.${TRAEFIK_HOST}`
+- LINE route 應為 `PathPrefix('/line')`
 
 ## 1. 填入客戶 LINE env
 
@@ -26,42 +27,58 @@ LINE_ALLOW_ALL_USERS=true
 
 注意：`LINE_PUBLIC_URL` 不要加 `/line/webhook`。
 
-## 2. 修 Hostinger Traefik LINE route
+## 2. 取得 private repo
 
-若 compose 目前是：
+因 repo 是 private，先用短效 fine-grained PAT 或 SSH deploy key clone。
+
+最短流程：
+
+```bash
+cd /opt/data
+read -rsp "GitHub token: " GH_PAT; echo
+export GH_PAT
+tmp_askpass="$(mktemp)"
+cat > "$tmp_askpass" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  Username*) echo x-access-token ;;
+  Password*) echo "$GH_PAT" ;;
+esac
+EOF
+chmod 700 "$tmp_askpass"
+GIT_ASKPASS="$tmp_askpass" GIT_TERMINAL_PROMPT=0 git clone https://github.com/jimmyhsu1010/hostinger_line_implementation.git
+rm -f "$tmp_askpass"
+unset GH_PAT
+cd hostinger_line_implementation
+git remote set-url origin https://github.com/jimmyhsu1010/hostinger_line_implementation.git
+```
+
+詳細見：
 
 ```text
-PathPrefix(`/line/webhook`)
+docs/private-repo-access.md
 ```
 
-改成：
-
-```text
-PathPrefix(`/line`)
-```
-
-這樣 `/line/media/...` 也會轉到 LINE adapter。
-
-可用：
+## 3. 一鍵套用 adapter/config/route/verify
 
 ```bash
-bash scripts/fix-traefik-line-route.sh /path/to/docker-compose.yml
+bash scripts/one-click-install.sh
 ```
 
-## 3. 套用 adapter 與設定
+這會：
 
-在 container 內或可寫 `/opt/hermes` 的環境中：
+1. 安裝本 repo 的 `line/adapter.py` 到 `/opt/hermes/plugins/platforms/line/adapter.py`。
+2. 套用基本 Hermes config。
+3. 檢查 Hostinger compose；若還是 `PathPrefix('/line/webhook')`，會改成 `PathPrefix('/line')`。
+4. 執行 health 驗證。
+
+如果 compose 不在自動搜尋位置，可以指定：
 
 ```bash
-bash scripts/bootstrap.sh
+COMPOSE_FILE=/path/to/docker-compose.yml bash scripts/one-click-install.sh
 ```
 
-若從 GitHub raw 執行：
-
-```bash
-export REPO_RAW_BASE="https://raw.githubusercontent.com/<owner>/hostinger_line_implementation/main"
-curl -fsSL "$REPO_RAW_BASE/scripts/bootstrap.sh" | bash
-```
+如果你是在 container 內 clone repo，通常看不到 host 的 compose，script 會略過 route 修改。這時請在 Hostinger/host 端確認 LINE route 已經是 `PathPrefix('/line')`。
 
 ## 4. 重啟
 

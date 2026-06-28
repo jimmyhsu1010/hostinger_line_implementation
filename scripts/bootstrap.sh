@@ -4,28 +4,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || true)"
 REPO_RAW_BASE="${REPO_RAW_BASE:-}"
 
-run_script() {
-  local name="$1"
-  if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/$name" ]; then
-    bash "$SCRIPT_DIR/$name"
-  elif [ -n "$REPO_RAW_BASE" ]; then
-    curl -fsSL "$REPO_RAW_BASE/scripts/$name" | bash
-  else
-    echo "ERROR: Cannot locate $name. Run from cloned repo or set REPO_RAW_BASE." >&2
-    exit 1
-  fi
-}
+# Preferred path: run from a cloned private repo.
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/one-click-install.sh" ]; then
+  exec bash "$SCRIPT_DIR/one-click-install.sh" "$@"
+fi
 
-echo "== Hostinger LINE Hermes bootstrap =="
-run_script install-line-adapter.sh
-run_script configure-hostinger-line.sh
+# Backward-compatible raw mode. This only works for public repos, or private repos
+# when curl is configured with auth outside this script. For private repos, clone first.
+if [ -n "$REPO_RAW_BASE" ]; then
+  echo "Downloading one-click installer from REPO_RAW_BASE..."
+  curl -fsSL "$REPO_RAW_BASE/scripts/one-click-install.sh" | bash -s -- "$@"
+  exit $?
+fi
 
-echo
-run_script verify-line.sh || true
-
-echo
-echo "Bootstrap finished. Next steps:"
-echo "1. Restart the Hermes container/gateway."
-echo "2. Confirm public health: <LINE_PUBLIC_URL>/line/webhook/health"
-echo "3. Set LINE Developers webhook URL: <LINE_PUBLIC_URL>/line/webhook"
-echo "4. Send a test message to the LINE OA."
+echo "ERROR: Cannot locate one-click-install.sh." >&2
+echo "Clone the private repo first, then run:" >&2
+echo "  cd hostinger_line_implementation && bash scripts/one-click-install.sh" >&2
+exit 1

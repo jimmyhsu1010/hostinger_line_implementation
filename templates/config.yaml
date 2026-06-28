@@ -1,0 +1,23 @@
+# Minimal customer config reference for Hostinger one-click Hermes + LINE.
+# Prefer applying these with scripts/configure-hostinger-line.sh so existing Hostinger defaults are preserved.
+# Do NOT put secrets here. Secrets belong in /opt/data/.env.
+
+timezone: Asia/Taipei
+
+agent:
+  reasoning_effort: medium
+  gateway_timeout: 1800
+  gateway_timeout_warning: 900
+
+compression:
+  enabled: true
+  codex_gpt55_autoraise: false
+
+security:
+  redact_secrets: true
+
+# Voice/STT is optional. Keep disabled for fastest clean deployment.
+# Enable only when the client needs LINE voice transcription and the STT backend is configured.
+stt:
+  enabled: false
+  provider: local
