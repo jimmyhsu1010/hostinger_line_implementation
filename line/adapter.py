@@ -65,6 +65,7 @@ import base64
 import enum
 import hashlib
 import hmac
+import io
 import json
 import logging
 import mimetypes
@@ -74,6 +75,7 @@ import secrets
 import tempfile
 import time
 import uuid
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -92,7 +94,10 @@ from gateway.platforms.base import (
     MessageEvent,
     MessageType,
     SendResult,
+    cache_audio_from_bytes,
+    cache_document_from_bytes,
     cache_image_from_bytes,
+    cache_video_from_bytes,
 )
 from gateway.config import Platform
 
@@ -631,6 +636,66 @@ def _truthy_env(name: str, default: bool = False) -> bool:
     return v.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _sniff_line_file_extension(data: bytes) -> str:
+    """Infer a useful extension when LINE omits an original filename."""
+    if data.startswith(b"%PDF-"):
+        return ".pdf"
+    if data.startswith(b"PK\x03\x04"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                names = set(zf.namelist())
+        except zipfile.BadZipFile:
+            return ".zip"
+        if any(n.startswith("word/") for n in names):
+            return ".docx"
+        if any(n.startswith("xl/") for n in names):
+            return ".xlsx"
+        if any(n.startswith("ppt/") for n in names):
+            return ".pptx"
+        return ".zip"
+    return ".bin"
+
+
+def _safe_line_filename(
+    filename: Optional[str],
+    *,
+    fallback_stem: str,
+    fallback_ext: str,
+) -> str:
+    """Return a basename safe for Hermes document cache helpers."""
+    safe_name = Path(filename or "").name.replace("\x00", "").strip()
+    safe_name = re.sub(r"[\r\n\t]", "_", safe_name)
+    safe_name = re.sub(r"[^A-Za-z0-9._() -]+", "_", safe_name)
+    if not safe_name or safe_name in {".", ".."}:
+        safe_name = f"{fallback_stem}{fallback_ext}"
+    elif not Path(safe_name).suffix:
+        safe_name = f"{safe_name}{fallback_ext}"
+    return safe_name[:180]
+
+
+def _cache_downloaded_media(
+    data: bytes,
+    msg_type: str,
+    message_id: str,
+    filename: Optional[str] = None,
+) -> str:
+    """Cache downloaded LINE media using the matching Hermes cache helper."""
+    fallback_stem = f"line_upload_{message_id or uuid.uuid4().hex[:12]}"
+    if msg_type == "image":
+        return cache_image_from_bytes(data, ext=".jpg")
+    if msg_type == "audio":
+        return cache_audio_from_bytes(data, ext=".m4a")
+    if msg_type == "video":
+        return cache_video_from_bytes(data, ext=".mp4")
+
+    ext = Path(filename or "").suffix or _sniff_line_file_extension(data)
+    safe_name = _safe_line_filename(
+        filename,
+        fallback_stem=fallback_stem,
+        fallback_ext=ext,
+    )
+    return cache_document_from_bytes(data, safe_name)
+
 # ---------------------------------------------------------------------------
 # Adapter
 # ---------------------------------------------------------------------------
@@ -954,7 +1019,11 @@ class LineAdapter(BasePlatformAdapter):
         if msg_type == "text":
             text = msg.get("text", "") or ""
         elif msg_type in {"image", "audio", "video", "file"}:
-            local_path = await self._download_media(message_id, msg_type)
+            local_path = await self._download_media(
+                message_id,
+                msg_type,
+                msg.get("fileName") or None,
+            )
             if local_path:
                 media_urls.append(local_path)
                 media_types.append(msg_type)
@@ -1052,7 +1121,12 @@ class LineAdapter(BasePlatformAdapter):
             except Exception:
                 pass
 
-    async def _download_media(self, message_id: str, msg_type: str) -> Optional[str]:
+    async def _download_media(
+        self,
+        message_id: str,
+        msg_type: str,
+        filename: Optional[str] = None,
+    ) -> Optional[str]:
         if not self._client or not message_id:
             return None
         try:
@@ -1060,14 +1134,8 @@ class LineAdapter(BasePlatformAdapter):
         except Exception as exc:
             logger.warning("LINE: failed to fetch %s content for %s: %s", msg_type, message_id, exc)
             return None
-        ext = {
-            "image": ".jpg",
-            "audio": ".m4a",
-            "video": ".mp4",
-            "file": ".bin",
-        }.get(msg_type, ".bin")
         try:
-            return cache_image_from_bytes(data, ext=ext)
+            return _cache_downloaded_media(data, msg_type, message_id, filename)
         except Exception as exc:
             logger.warning("LINE: failed to cache %s payload: %s", msg_type, exc)
             return None

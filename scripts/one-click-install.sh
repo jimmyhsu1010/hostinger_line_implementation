@@ -7,6 +7,38 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 log() { printf '\n== %s ==\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 
+CONFIGURE_ARGS=()
+VERIFY_ARGS=(--skip-health)
+for arg in "$@"; do
+  case "$arg" in
+    --with-stt)
+      CONFIGURE_ARGS+=("$arg")
+      ;;
+    --strict-health|--verify-health)
+      VERIFY_ARGS=()
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: bash scripts/one-click-install.sh [--with-stt] [--strict-health]
+
+Installs the LINE platform plugin, applies safe Hermes config defaults, checks
+the Hostinger Traefik LINE route, and verifies env/adapter syntax.
+
+Options:
+  --with-stt       Also enable local STT config defaults.
+  --strict-health  Run full local/public health checks before exiting. By
+                   default health is skipped because a container/gateway
+                   restart is usually required after installing the adapter.
+EOF
+      exit 0
+      ;;
+    *)
+      echo "ERROR: unknown option: $arg" >&2
+      exit 2
+      ;;
+  esac
+done
+
 find_compose_file() {
   if [ -n "${COMPOSE_FILE:-}" ] && [ -f "$COMPOSE_FILE" ]; then
     printf '%s\n' "$COMPOSE_FILE"
@@ -39,7 +71,7 @@ log "1/5 Install verified LINE adapter"
 bash "$SCRIPT_DIR/install-line-adapter.sh"
 
 log "2/5 Apply safe Hermes config defaults"
-bash "$SCRIPT_DIR/configure-hostinger-line.sh" "$@"
+bash "$SCRIPT_DIR/configure-hostinger-line.sh" "${CONFIGURE_ARGS[@]}"
 
 log "3/5 Check/fix Hostinger Traefik LINE route"
 if compose_file="$(find_compose_file)"; then
@@ -58,11 +90,11 @@ else
 fi
 
 log "4/5 Verify LINE adapter/env/health"
-bash "$SCRIPT_DIR/verify-line.sh" || true
+bash "$SCRIPT_DIR/verify-line.sh" "${VERIFY_ARGS[@]}"
 
 log "5/5 Done"
 echo "Next steps:"
 echo "1. Restart the Hermes container or gateway."
-echo "2. Confirm health: <LINE_PUBLIC_URL>/line/webhook/health"
+echo "2. Confirm health: bash scripts/verify-line.sh"
 echo "3. Set LINE Developers webhook: <LINE_PUBLIC_URL>/line/webhook"
 echo "4. Send a LINE test message."

@@ -27,11 +27,17 @@ LINE_ALLOW_ALL_USERS=true
 
 注意：`LINE_PUBLIC_URL` 不要加 `/line/webhook`。
 
-## 2. 取得 private repo
+## 2. 取得 repo
 
-因 repo 是 private，先用短效 fine-grained PAT 或 SSH deploy key clone。
+目前 repo 是 public，可直接 clone：
 
-最短流程：
+```bash
+cd /opt/data
+git clone https://github.com/jimmyhsu1010/hostinger_line_implementation.git
+cd hostinger_line_implementation
+```
+
+如果之後改回 private，再用短效 fine-grained PAT 或 SSH deploy key clone。PAT 最短流程：
 
 ```bash
 cd /opt/data
@@ -67,10 +73,10 @@ bash scripts/one-click-install.sh
 
 這會：
 
-1. 安裝本 repo 的 `line/adapter.py` 到 `/opt/hermes/plugins/platforms/line/adapter.py`。
+1. 安裝本 repo 的 `line/adapter.py` 與 `line/plugin.yaml` 到 `/opt/hermes/plugins/platforms/line/`。
 2. 套用基本 Hermes config。
 3. 檢查 Hostinger compose；若還是 `PathPrefix('/line/webhook')`，會改成 `PathPrefix('/line')`。
-4. 執行 health 驗證。
+4. 驗證 LINE env 與 adapter 語法；預設略過 health，因為安裝後通常要先重啟 container/gateway。
 
 如果 compose 不在自動搜尋位置，可以指定：
 
@@ -92,6 +98,12 @@ docker restart <container_name>
 
 ```bash
 bash scripts/verify-line.sh
+```
+
+`verify-line.sh` 會用嚴格模式回傳 exit code；env、adapter、本機 health 或公開 health 任一失敗，都會讓指令失敗。安裝前只檢查 env/adapter 可用：
+
+```bash
+bash scripts/verify-line.sh --skip-health
 ```
 
 確認公開 health：

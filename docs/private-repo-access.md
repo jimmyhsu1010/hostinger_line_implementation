@@ -1,6 +1,6 @@
 # Private GitHub repo access
 
-This repo is private. Public raw URLs like this will NOT work unless the repo is made public or curl is authenticated:
+Use this note only if the repo is private again. Public raw URLs like this will NOT work unless the repo is public or curl is authenticated:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jimmyhsu1010/hostinger_line_implementation/main/scripts/bootstrap.sh | bash

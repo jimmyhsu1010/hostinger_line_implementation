@@ -2,7 +2,7 @@
 
 這個 repo 是給「Hostinger 一鍵部署 Hermes Agent」後使用的快速套用包。
 
-目標：客戶透過 Hostinger 一鍵部署 Hermes Agent 後，部署者只要 clone 這個 private repo，執行一個 script，就能套用已驗證的 LINE adapter、基本 config、檢查 Hostinger Traefik LINE route，並完成 health 驗證。
+目標：客戶透過 Hostinger 一鍵部署 Hermes Agent 後，部署者只要 clone 這個 repo，執行一個 script，就能套用已驗證的 LINE platform plugin、基本 config、檢查 Hostinger Traefik LINE route，並完成安裝前驗證。
 
 不包含：
 
@@ -36,11 +36,18 @@ PathPrefix(`/line/webhook`)
 
 原因：`/line/webhook` 只涵蓋 webhook 與 health；LINE 圖片、影片、音訊或檔案預覽可能會使用 `/line/media/...`，所以 route 要涵蓋整個 `/line`。
 
-## Private repo clone
+## Clone repo
 
-這個 repo 是 private，不能直接用一般 public raw URL 下載。
+目前 repo 是 public，可直接 clone：
 
-最快方式是使用短效 fine-grained PAT，只給這個 repo 的 Contents Read-only 權限：
+```bash
+cd /opt/data
+git clone https://github.com/jimmyhsu1010/hostinger_line_implementation.git
+cd hostinger_line_implementation
+bash scripts/one-click-install.sh
+```
+
+如果之後改回 private，最快方式是使用短效 fine-grained PAT，只給這個 repo 的 Contents Read-only 權限：
 
 ```bash
 cd /opt/data
@@ -80,10 +87,10 @@ bash scripts/one-click-install.sh
 
 這支 script 會做：
 
-1. 備份並覆蓋 `/opt/hermes/plugins/platforms/line/adapter.py`。
+1. 建立/備份並安裝 `/opt/hermes/plugins/platforms/line/adapter.py` 與 `plugin.yaml`。
 2. 套用安全的 Hermes config 預設值。
 3. 若找得到 Hostinger compose，檢查/修正 LINE route 為 `PathPrefix('/line')`。
-4. 驗證 LINE env、adapter 語法、本機 health、公開 health。
+4. 驗證 LINE env 與 adapter 語法；預設略過 health，因為安裝後通常要先重啟 container/gateway。
 5. 印出下一步 LINE Developers webhook URL。
 
 舊名稱仍可用：
@@ -131,6 +138,8 @@ templates/config.yaml
 
 ## 驗證
 
+安裝後先重啟 Hermes container/gateway，然後執行完整驗證：
+
 ```bash
 bash scripts/verify-line.sh
 ```
@@ -141,6 +150,12 @@ bash scripts/verify-line.sh
 - adapter.py 是否可編譯。
 - 本機 health endpoint。
 - 公開 health endpoint。
+
+若只想在安裝過程中檢查 env 與 adapter 語法，可用：
+
+```bash
+bash scripts/verify-line.sh --skip-health
+```
 
 LINE Developers webhook URL 應填：
 
@@ -158,9 +173,10 @@ https://<LINE_PUBLIC_URL_HOST>/line/webhook/health
 
 ```text
 line/adapter.py                         已驗證 LINE adapter
+line/plugin.yaml                        LINE platform plugin metadata
 scripts/one-click-install.sh             一鍵套用 adapter/config/route/verify
 scripts/bootstrap.sh                     相容舊名稱，轉呼叫 one-click-install.sh
-scripts/install-line-adapter.sh          覆蓋 /opt/hermes 的 adapter，並備份原檔
+scripts/install-line-adapter.sh          安裝 /opt/hermes 的 LINE plugin，並備份原檔
 scripts/configure-hostinger-line.sh      套用 Hermes config 基本設定
 scripts/fix-traefik-line-route.sh        將舊 PathPrefix('/line/webhook') 修成 PathPrefix('/line')
 scripts/verify-line.sh                   驗證 env、adapter、health
@@ -170,6 +186,7 @@ templates/docker-compose.hostinger.yml   Hostinger compose 範例，LINE route �
 templates/handover.md                    交付給客戶的簡短說明
 docs/hostinger-line-sop.md               部署 SOP
 docs/private-repo-access.md              private repo clone/access 說明
+tests/test_bootstrap.py                  bootstrap 與 adapter smoke tests
 ```
 
 ## 安全提醒
